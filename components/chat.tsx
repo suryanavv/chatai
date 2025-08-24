@@ -4,14 +4,12 @@ import React, { useRef, useEffect, useState } from 'react';
 import { useChatContext } from '@/hooks/use-chat-context';
 import { useSettings } from '@/hooks/use-settings-context';
 import { ChatMessage } from './chat-message';
-import { ChatInput } from './chat-input';
+import ChatInput from './chat-input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Settings } from './settings';
 import { Settings as SettingsIcon } from 'lucide-react';
-import { ModelProvider } from '@/lib/types';
 
 interface ChatMessage {
   id: string;
@@ -91,7 +89,7 @@ export const Chat: React.FC = () => {
         parts: [],
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      let isFirstChunk = true;
 
       try {
         while (true) {
@@ -111,13 +109,24 @@ export const Chat: React.FC = () => {
                 
                 // Handle text deltas (the actual response text)
                 if (parsed.type === 'text-delta' && parsed.delta) {
-                  assistantMessage.content += parsed.delta;
-                  assistantMessage.parts = [{ type: 'text', text: assistantMessage.content }];
-                  setMessages(prev => prev.map(msg => 
-                    msg.id === assistantMessage.id 
-                      ? { ...msg, content: assistantMessage.content, parts: assistantMessage.parts }
-                      : msg
-                  ));
+                  if (isFirstChunk) {
+                    // First chunk - add the message to the UI and hide typing animation
+                    assistantMessage.content = parsed.delta;
+                    assistantMessage.parts = [{ type: 'text', text: parsed.delta }];
+                    setMessages(prev => [...prev, assistantMessage]);
+                    setIsLoading(false); // Hide typing animation
+                    isFirstChunk = false;
+                  } else {
+                    // Update the existing message with new content
+                    assistantMessage.content += parsed.delta;
+                    assistantMessage.parts = [{ type: 'text', text: assistantMessage.content }];
+                    
+                    setMessages(prev => prev.map(msg => 
+                      msg.id === assistantMessage.id 
+                        ? { ...msg, content: assistantMessage.content, parts: assistantMessage.parts }
+                        : msg
+                    ));
+                  }
                 }
               } catch (e) {
                 // Ignore parsing errors for partial chunks
@@ -132,19 +141,9 @@ export const Chat: React.FC = () => {
     } catch (error) {
       console.error('Error sending message:', error);
       alert('Failed to send message. Please try again.');
-      
-      // Remove the assistant message if there was an error
-      setMessages(prev => prev.filter(msg => msg.id !== (Date.now() + 1).toString()));
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const providerLabels: Record<ModelProvider, string> = {
-    [ModelProvider.OPENAI]: 'OpenAI',
-    [ModelProvider.GOOGLE]: 'Google',
-    [ModelProvider.ANTHROPIC]: 'Anthropic',
-    [ModelProvider.OPENROUTER]: 'OpenRouter',
   };
 
   return (
@@ -154,8 +153,6 @@ export const Chat: React.FC = () => {
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold">AI Chat Assistant</h1>
           <div className="flex items-center space-x-2">
-            <Badge variant="outline">{providerLabels[selectedProvider]}</Badge>
-            <Badge variant="secondary">{selectedModel}</Badge>
             <Button variant="outline" size="sm" onClick={() => setShowSettings(true)}>
               <SettingsIcon className="w-4 h-4 mr-2" />
               Settings
